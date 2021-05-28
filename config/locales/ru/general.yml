@@ -99,11 +99,6 @@ ru:
       tags_placeholder: "Введите метки, которые вы бы хотели использовать, разделенные запятыми (',')"
     index:
       featured_debates: Особенные
-      filter_topic:
-        one: " с темой '%{topic}'"
-        few: " с темой '%{topic}'"
-        many: " с темой '%{topic}'"
-        other: " с темой '%{topic}'"
       orders:
         confidence_score: наивысший рейтинг
         created_at: самые свежие
@@ -236,7 +231,6 @@ ru:
       collaborative_legislation: Процесс законотворчества
       debates: Обсуждения проблем
       locale: "Язык:"
-      logo: CONSUL логотип
       management: Управление
       moderation: Модерирование
       valuation: Оценка
@@ -244,21 +238,18 @@ ru:
       help: Помощь
       my_account_link: Мой аккаунт
       my_activity_link: Моя активность
-      open: открыто
       open_gov: Открытое правительство
       proposals: Заявки
       poll_questions: Голосования
       budgets: Партисипаторное бюджетирование
       notification_item:
         new_notifications:
+          zero: "У вас нет новых уведомлений"
           one: У вас есть новое уведомление
           few: У вас есть %{count} новых уведомлений
           many: У вас есть %{count} новых уведомлений
           other: У вас есть %{count} новых уведомлений
         notifications: Уведомления
-        no_notifications: "У вас нет новых уведомлений"
-    admin:
-      watch_form_message: "У вас есть не сохраненные изменения. Вы подтверждаете, что хотите покинуть страницу?"
   notifications:
     index:
       empty_notifications: У вас нет новых уведомлений.
@@ -306,8 +297,6 @@ ru:
       sign_in: Войти при помощи Twitter
       sign_up: Зарегистрироваться при помощи Twitter
       name: Twitter
-    info_sign_in: "Войти при помощи:"
-    info_sign_up: "Зарегистрироваться при помощи:"
     or_fill: "Или заполните следующую форму:"
   proposals:
     create:
@@ -354,11 +343,6 @@ ru:
       map_skip_checkbox: "Это предложение не имеет конкретного места на карте, или я о нем не знаю."
     index:
       featured_proposals: Особенные
-      filter_topic:
-        one: " с темой '%{topic}'"
-        few: " с темой '%{topic}'"
-        many: " с темой '%{topic}'"
-        other: " с темой '%{topic}'"
       orders:
         confidence_score: наивысший рейтинг
         created_at: наиболее свежие
@@ -727,7 +711,6 @@ ru:
     follow: "Подписаться"
     following: "Подписан"
     follow_entity: "Подписаться на %{entity}"
-    hide: Скрыть
     print:
       print_button: Распечатать эту информацию
     search: Поиск
@@ -790,7 +773,6 @@ ru:
     facebook: "%{org} Facebook"
     twitter: "%{org} Twitter"
     youtube: "%{org} YouTube"
-    whatsapp: WhatsApp
     telegram: "%{org} Telegram"
     instagram: "%{org} Instagram"
   stats:
@@ -892,9 +874,10 @@ ru:
         debates: "Самые активные дебаты"
         proposals: "Самые активные предложения"
         processes: "Открытые процессы"
-      see_all_debates: Просмотреть все дебаты
-      see_all_proposals: Просмотреть все предложения
-      see_all_processes: Просмотреть все процессы
+      see_all:
+        debates: Просмотреть все дебаты
+        proposals: Просмотреть все предложения
+        processes: Просмотреть все процессы
       process_label: Процесс
       see_process: Просмотреть процесс
     cards:

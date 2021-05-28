@@ -30,7 +30,7 @@ describe "Localization" do
     expect(page).to have_select("locale-switcher", selected: "English")
   end
 
-  scenario "Changing the locale", :js do
+  scenario "Changing the locale" do
     visit "/"
     expect(page).to have_content("Language")
 
@@ -40,7 +40,7 @@ describe "Localization" do
     expect(page).to have_select("locale-switcher", selected: "Español")
   end
 
-  scenario "Keeps query parameters while using protected redirects", :js do
+  scenario "Keeps query parameters while using protected redirects" do
     visit "/debates?order=created_at&host=evil.dev"
 
     select("Español", from: "locale-switcher")
@@ -86,6 +86,24 @@ describe "Localization" do
       within(".locale-form .js-location-changer") do
         expect(page).to have_content "wl"
       end
+    end
+  end
+
+  scenario "uses default locale when session locale has disappeared" do
+    default_locales = I18n.available_locales
+
+    visit root_path(locale: :es)
+
+    expect(page).to have_content "Entrar"
+
+    begin
+      I18n.available_locales = default_locales - [:es]
+
+      visit root_path
+
+      expect(page).to have_content "Sign in"
+    ensure
+      I18n.available_locales = default_locales
     end
   end
 end

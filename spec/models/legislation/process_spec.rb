@@ -10,6 +10,13 @@ describe Legislation::Process do
     expect(process).to be_valid
   end
 
+  it "assigns default values to new processes" do
+    process = Legislation::Process.new
+
+    expect(process.background_color).to be_present
+    expect(process.font_color).to be_present
+  end
+
   describe "dates validations" do
     it "is invalid if debate_start_date is present but debate_end_date is not" do
       process = build(:legislation_process, debate_start_date: Date.current, debate_end_date: "")
@@ -220,6 +227,37 @@ describe Legislation::Process do
       it "has milestone_tags" do
         expect(process.reload.milestone_tag_list.count).to eq(1)
       end
+    end
+  end
+
+  describe ".search" do
+    let!(:traffic) do
+      create(:legislation_process,
+             title: "Traffic regulation",
+             summary: "Lane structure",
+             description: "From top to bottom")
+    end
+
+    let!(:animal_farm) do
+      create(:legislation_process,
+             title: "Hierarchy structure",
+             summary: "Pigs at the top",
+             description: "Napoleon in charge of the traffic")
+    end
+
+    it "returns only matching polls" do
+      expect(Legislation::Process.search("lane")).to eq [traffic]
+      expect(Legislation::Process.search("pigs")).to eq [animal_farm]
+      expect(Legislation::Process.search("nothing here")).to be_empty
+    end
+
+    it "gives more weight to name" do
+      expect(Legislation::Process.search("traffic")).to eq [traffic, animal_farm]
+      expect(Legislation::Process.search("structure")).to eq [animal_farm, traffic]
+    end
+
+    it "gives more weight to summary than description" do
+      expect(Legislation::Process.search("top")).to eq [animal_farm, traffic]
     end
   end
 end

@@ -1,14 +1,7 @@
 require "rails_helper"
 
 describe "Proposals" do
-  it_behaves_like "milestoneable",
-                  :proposal,
-                  "proposal_path"
-
-  scenario "Disabled with a feature flag" do
-    Setting["process.proposals"] = nil
-    expect { visit proposals_path }.to raise_exception(FeatureFlags::FeatureDisabled)
-  end
+  it_behaves_like "milestoneable", :proposal
 
   context "Concerns" do
     it_behaves_like "notifiable in-app", :proposal
@@ -21,6 +14,7 @@ describe "Proposals" do
                     :proposal,
                     "proposal_path",
                     { "id": "id" }
+    it_behaves_like "flaggable", :proposal
   end
 
   context "Index" do
@@ -139,9 +133,43 @@ describe "Proposals" do
     expect(page.html).to include "<title>#{proposal.title}</title>"
     expect(page).not_to have_selector ".js-flag-actions"
     expect(page).not_to have_selector ".js-follow"
+  end
 
-    within(".social-share-button") do
-      expect(page.all("a").count).to be(4) # Twitter, Facebook, Google+, Telegram
+  describe "Social share buttons" do
+    context "On desktop browsers" do
+      scenario "Shows links to share on facebook and twitter" do
+        visit proposal_path(create(:proposal))
+
+        within(".social-share-button") do
+          expect(page.all("a").count).to be(2)
+          expect(page).to have_link "Share to Facebook"
+          expect(page).to have_link "Share to Twitter"
+        end
+      end
+    end
+
+    context "On small devices" do
+      let!(:window_size) { Capybara.current_window.size }
+
+      before do
+        Capybara.current_window.resize_to(639, 479)
+      end
+
+      after do
+        Capybara.current_window.resize_to(*window_size)
+      end
+
+      scenario "Shows links to share on telegram and whatsapp too" do
+        visit proposal_path(create(:proposal))
+
+        within(".social-share-button") do
+          expect(page.all("a").count).to be(4)
+          expect(page).to have_link "Share to Facebook"
+          expect(page).to have_link "Share to Twitter"
+          expect(page).to have_link "Share to Telegram"
+          expect(page).to have_link "Share to WhatsApp"
+        end
+      end
     end
   end
 
@@ -172,8 +200,6 @@ describe "Proposals" do
       proposal = create(:proposal)
       visit proposal_path(proposal)
       expect(page).to have_content "Access the community"
-
-      Setting["feature.community"] = false
     end
 
     scenario "Can not access the community" do
@@ -199,9 +225,35 @@ describe "Proposals" do
         expect(page).not_to have_link("No comments", href: "#comments")
       end
     end
+
+    scenario "After using the browser's back button, social buttons will have one screen reader" do
+      Setting["org_name"] = "CONSUL"
+      proposal = create(:proposal)
+      visit proposal_path(proposal)
+      click_link "Help"
+
+      expect(page).to have_content "CONSUL is a platform for citizen participation"
+
+      go_back
+
+      expect(page).to have_css "span.show-for-sr", text: "twitter", count: 1
+    end
   end
 
-  context "Show on mobile screens" do
+  describe "Sticky support button on medium and up screens" do
+    scenario "is shown anchored to top" do
+      proposal = create(:proposal)
+      visit proposals_path
+
+      click_link proposal.title
+
+      within("#proposal_sticky") do
+        expect(find(".is-anchored")).to match_style(top: "0px")
+      end
+    end
+  end
+
+  describe "Show sticky support button on mobile screens" do
     let!(:window_size) { Capybara.current_window.size }
 
     before do
@@ -212,9 +264,58 @@ describe "Proposals" do
       Capybara.current_window.resize_to(*window_size)
     end
 
-    scenario "Show support button sticky at bottom", :js do
+    scenario "On a first visit" do
       proposal = create(:proposal)
       visit proposal_path(proposal)
+
+      within("#proposal_sticky") do
+        expect(page).to have_css(".is-stuck")
+        expect(page).not_to have_css(".is-anchored")
+      end
+    end
+
+    scenario "After visiting another page" do
+      proposal = create(:proposal)
+
+      visit proposal_path(proposal)
+      click_link "Go back"
+      click_link proposal.title
+
+      within("#proposal_sticky") do
+        expect(page).to have_css(".is-stuck")
+        expect(page).not_to have_css(".is-anchored")
+      end
+    end
+
+    scenario "After using the browser's back button" do
+      proposal = create(:proposal)
+
+      visit proposal_path(proposal)
+      click_link "Go back"
+
+      expect(page).to have_link proposal.title
+
+      go_back
+
+      within("#proposal_sticky") do
+        expect(page).to have_css(".is-stuck")
+        expect(page).not_to have_css(".is-anchored")
+      end
+    end
+
+    scenario "After using the browser's forward button" do
+      proposal = create(:proposal)
+
+      visit proposals_path
+      click_link proposal.title
+
+      expect(page).not_to have_link proposal.title
+
+      go_back
+
+      expect(page).to have_link proposal.title
+
+      go_forward
 
       within("#proposal_sticky") do
         expect(page).to have_css(".is-stuck")
@@ -250,11 +351,11 @@ describe "Proposals" do
     proposal = create(:proposal)
 
     visit proposal_path(proposal)
-    expect(page).to have_css "meta[name='twitter:title'][content=\'#{proposal.title}\']", visible: false
-    expect(page).to have_css "meta[property='og:title'][content=\'#{proposal.title}\']", visible: false
+    expect(page).to have_css "meta[name='twitter:title'][content=\'#{proposal.title}\']", visible: :hidden
+    expect(page).to have_css "meta[property='og:title'][content=\'#{proposal.title}\']", visible: :hidden
   end
 
-  scenario "Create and publish" do
+  scenario "Create and publish", :with_frozen_time do
     author = create(:user)
     login_as(author)
 
@@ -262,11 +363,11 @@ describe "Proposals" do
 
     fill_in "Proposal title", with: "Help refugees"
     fill_in "Proposal summary", with: "In summary, what we want is..."
-    fill_in "Proposal text", with: "This is very important because..."
-    fill_in "proposal_video_url", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    fill_in "proposal_tag_list", with: "Refugees, Solidarity"
-    check "proposal_terms_of_service"
+    fill_in_ckeditor "Proposal text", with: "This is very important because..."
+    fill_in "External video URL", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    fill_in "Tags", with: "Refugees, Solidarity"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -286,20 +387,20 @@ describe "Proposals" do
     expect(page).to have_content author.name
     expect(page).to have_content "Refugees"
     expect(page).to have_content "Solidarity"
-    expect(page).to have_content I18n.l(Proposal.last.created_at.to_date)
+    expect(page).to have_content I18n.l(Date.current)
   end
 
-  scenario "Create with invisible_captcha honeypot field" do
+  scenario "Create with invisible_captcha honeypot field", :no_js do
     author = create(:user)
     login_as(author)
 
     visit new_proposal_path
     fill_in "Proposal title", with: "I am a bot"
-    fill_in "proposal_subtitle", with: "This is the honeypot field"
+    fill_in "If you are human, ignore this field", with: "This is the honeypot field"
     fill_in "Proposal summary", with: "This is the summary"
     fill_in "Proposal text", with: "This is the description"
-    fill_in "proposal_responsible_name", with: "Some other robot"
-    check "proposal_terms_of_service"
+    fill_in "Full name of the person submitting the proposal", with: "Some other robot"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -317,9 +418,9 @@ describe "Proposals" do
     visit new_proposal_path
     fill_in "Proposal title", with: "I am a bot"
     fill_in "Proposal summary", with: "This is the summary"
-    fill_in "Proposal text", with: "This is the description"
-    fill_in "proposal_responsible_name", with: "Some other robot"
-    check "proposal_terms_of_service"
+    fill_in_ckeditor "Proposal text", with: "This is the description"
+    fill_in "Full name of the person submitting the proposal", with: "Some other robot"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -335,10 +436,9 @@ describe "Proposals" do
     visit new_proposal_path
     fill_in "Proposal title", with: "Help refugees"
     fill_in "Proposal summary", with: "In summary, what we want is..."
-    fill_in "Proposal text", with: "This is very important because..."
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    check "proposal_terms_of_service"
+    fill_in_ckeditor "Proposal text", with: "This is very important because..."
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -346,7 +446,12 @@ describe "Proposals" do
     click_link "No, I want to publish the proposal"
     click_link "Not now, go to my proposal"
 
-    expect(Proposal.last.responsible_name).to eq("Isabel Garcia")
+    click_link "Dashboard"
+    click_link "Edit my proposal"
+
+    within_window(window_opened_by { click_link "Edit proposal" }) do
+      expect(page).to have_field "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    end
   end
 
   scenario "Responsible name field is not shown for verified users" do
@@ -354,12 +459,13 @@ describe "Proposals" do
     login_as(author)
 
     visit new_proposal_path
-    expect(page).not_to have_selector("#proposal_responsible_name")
+
+    expect(page).not_to have_field "Full name of the person submitting the proposal"
 
     fill_in "Proposal title", with: "Help refugees"
     fill_in "Proposal summary", with: "In summary, what we want is..."
-    fill_in "Proposal text", with: "This is very important because..."
-    check "proposal_terms_of_service"
+    fill_in_ckeditor "Proposal text", with: "This is very important because..."
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
     expect(page).to have_content "Proposal created successfully."
@@ -379,7 +485,7 @@ describe "Proposals" do
     expect(page).to have_content error_message
   end
 
-  scenario "JS injection is prevented but safe html is respected" do
+  scenario "JS injection is prevented but safe html is respected", :no_js do
     author = create(:user)
     login_as(author)
 
@@ -387,8 +493,8 @@ describe "Proposals" do
     fill_in "Proposal title", with: "Testing an attack"
     fill_in "Proposal summary", with: "In summary, what we want is..."
     fill_in "Proposal text", with: "<p>This is <script>alert('an attack');</script></p>"
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    check "proposal_terms_of_service"
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -409,9 +515,9 @@ describe "Proposals" do
     visit new_proposal_path
     fill_in "Proposal title", with: "Testing auto link"
     fill_in "Proposal summary", with: "In summary, what we want is..."
-    fill_in "Proposal text", with: "<p>This is a link www.example.org</p>"
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    check "proposal_terms_of_service"
+    fill_in_ckeditor "Proposal text", with: "This is a link www.example.org"
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -423,7 +529,7 @@ describe "Proposals" do
     expect(page).to have_link("www.example.org", href: "http://www.example.org")
   end
 
-  scenario "JS injection is prevented but autolinking is respected" do
+  scenario "JS injection is prevented but autolinking is respected", :no_js do
     author = create(:user)
     js_injection_string = "<script>alert('hey')</script> <a href=\"javascript:alert('surprise!')\">click me<a/> http://example.org"
     login_as(author)
@@ -432,8 +538,8 @@ describe "Proposals" do
     fill_in "Proposal title", with: "Testing auto link"
     fill_in "Proposal summary", with: "In summary, what we want is..."
     fill_in "Proposal text", with: js_injection_string
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
-    check "proposal_terms_of_service"
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+    check "I agree to the Privacy Policy and the Terms and conditions of use"
 
     click_button "Create proposal"
 
@@ -454,7 +560,7 @@ describe "Proposals" do
 
     click_link "Edit proposal"
 
-    expect(page).to have_current_path(edit_proposal_path(Proposal.last))
+    expect(page).to have_field "Proposal title", with: "Testing auto link"
     expect(page).not_to have_link("click me")
     expect(page.html).not_to include "<script>alert('hey')</script>"
   end
@@ -487,10 +593,10 @@ describe "Proposals" do
 
       fill_in "Proposal title", with: "Help refugees"
       fill_in "Proposal summary", with: "In summary, what we want is..."
-      fill_in "Proposal text", with: "This is very important because..."
-      fill_in "proposal_video_url", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
-      fill_in "proposal_responsible_name", with: "Isabel Garcia"
-      check "proposal_terms_of_service"
+      fill_in_ckeditor "Proposal text", with: "This is very important because..."
+      fill_in "External video URL", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
+      fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+      check "I agree to the Privacy Policy and the Terms and conditions of use"
 
       select("California", from: "proposal_geozone_id")
       click_button "Create proposal"
@@ -519,15 +625,15 @@ describe "Proposals" do
         click_link "Edit my proposal"
       end
 
-      click_link "Retire proposal"
+      within_window(window_opened_by { click_link "Retire proposal" }) do
+        expect(page).to have_current_path(retire_form_proposal_path(proposal))
 
-      expect(page).to have_current_path(retire_form_proposal_path(proposal))
+        select "Duplicated", from: "proposal_retired_reason"
+        fill_in "Explanation", with: "There are three other better proposals with the same subject"
+        click_button "Retire proposal"
 
-      select "Duplicated", from: "proposal_retired_reason"
-      fill_in "Explanation", with: "There are three other better proposals with the same subject"
-      click_button "Retire proposal"
-
-      expect(page).to have_content "Proposal retired"
+        expect(page).to have_content "Proposal retired"
+      end
 
       visit proposal_path(proposal)
 
@@ -537,7 +643,7 @@ describe "Proposals" do
       expect(page).to have_content "There are three other better proposals with the same subject"
     end
 
-    scenario "Fields are mandatory", :js do
+    scenario "Fields are mandatory" do
       proposal = create(:proposal)
       login_as(proposal.author)
 
@@ -643,7 +749,6 @@ describe "Proposals" do
     expect(page).not_to have_current_path(edit_proposal_path(proposal))
     expect(page).to have_current_path(root_path)
     expect(page).to have_content "You do not have permission"
-    Setting["max_votes_for_proposal_edit"] = 1000
   end
 
   scenario "Update should be posible for the author of an editable proposal" do
@@ -655,8 +760,8 @@ describe "Proposals" do
 
     fill_in "Proposal title", with: "End child poverty"
     fill_in "Proposal summary", with: "Basically..."
-    fill_in "Proposal text", with: "Let's do something to end child poverty"
-    fill_in "proposal_responsible_name", with: "Isabel Garcia"
+    fill_in_ckeditor "Proposal text", with: "Let's do something to end child poverty"
+    fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
 
     click_button "Save changes"
 
@@ -678,7 +783,7 @@ describe "Proposals" do
   end
 
   describe "Proposal index order filters" do
-    scenario "Default order is hot_score", :js do
+    scenario "Default order is hot_score" do
       best_proposal = create(:proposal, title: "Best proposal")
       best_proposal.update_column(:hot_score, 10)
       worst_proposal = create(:proposal, title: "Worst proposal")
@@ -692,7 +797,7 @@ describe "Proposals" do
       expect(medium_proposal.title).to appear_before(worst_proposal.title)
     end
 
-    scenario "Proposals are ordered by confidence_score", :js do
+    scenario "Proposals are ordered by confidence_score" do
       best_proposal = create(:proposal, title: "Best proposal")
       best_proposal.update_column(:confidence_score, 10)
       worst_proposal = create(:proposal, title: "Worst proposal")
@@ -709,11 +814,11 @@ describe "Proposals" do
         expect(medium_proposal.title).to appear_before(worst_proposal.title)
       end
 
-      expect(current_url).to include("order=confidence_score")
-      expect(current_url).to include("page=1")
+      expect(page).to have_current_path(/order=confidence_score/)
+      expect(page).to have_current_path(/page=1/)
     end
 
-    scenario "Proposals are ordered by newest", :js do
+    scenario "Proposals are ordered by newest" do
       best_proposal = create(:proposal, title: "Best proposal", created_at: Time.current)
       medium_proposal = create(:proposal, title: "Medium proposal", created_at: Time.current - 1.hour)
       worst_proposal = create(:proposal, title: "Worst proposal", created_at: Time.current - 1.day)
@@ -727,8 +832,8 @@ describe "Proposals" do
         expect(medium_proposal.title).to appear_before(worst_proposal.title)
       end
 
-      expect(current_url).to include("order=created_at")
-      expect(current_url).to include("page=1")
+      expect(page).to have_current_path(/order=created_at/)
+      expect(page).to have_current_path(/page=1/)
     end
 
     context "Recommendations" do
@@ -794,8 +899,8 @@ describe "Proposals" do
           expect(medium_proposal.title).to appear_before(worst_proposal.title)
         end
 
-        expect(current_url).to include("order=recommendations")
-        expect(current_url).to include("page=1")
+        expect(page).to have_current_path(/order=recommendations/)
+        expect(page).to have_current_path(/page=1/)
       end
 
       scenario "are not shown if account setting is disabled" do
@@ -809,7 +914,7 @@ describe "Proposals" do
         expect(page).not_to have_link("recommendations")
       end
 
-      scenario "are automatically disabled when dismissed from index", :js do
+      scenario "are automatically disabled when dismissed from index" do
         proposal = create(:proposal, tag_list: "Sport")
         user     = create(:user, followables: [proposal])
 
@@ -829,12 +934,9 @@ describe "Proposals" do
         expect(page).not_to have_css(".recommendation", count: 3)
         expect(page).to have_content("Recommendations for proposals are now disabled for this account")
 
-        user.reload
-
         visit account_path
 
         expect(find("#account_recommended_proposals")).not_to be_checked
-        expect(user.recommended_proposals).to be(false)
       end
     end
   end
@@ -1082,353 +1184,25 @@ describe "Proposals" do
       end
     end
 
-    context "Advanced search" do
-      scenario "Search by text", :js do
-        proposal1 = create(:proposal, title: "Get Schwifty")
-        proposal2 = create(:proposal, title: "Schwifty Hello")
-        proposal3 = create(:proposal, title: "Do not show me")
-
-        visit proposals_path
-
-        click_link "Advanced search"
-        fill_in "Write the text", with: "Schwifty"
-        click_button "Filter"
-
-        expect(page).to have_content("There are 2 citizen proposals")
-
-        within("#proposals") do
-          expect(page).to have_content(proposal1.title)
-          expect(page).to have_content(proposal2.title)
-          expect(page).not_to have_content(proposal3.title)
-        end
-      end
-
-      context "Search by author type" do
-        scenario "Public employee", :js do
-          ana = create :user, official_level: 1
-          john = create :user, official_level: 2
-
-          proposal1 = create(:proposal, author: ana)
-          proposal2 = create(:proposal, author: ana)
-          proposal3 = create(:proposal, author: john)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select Setting["official_level_1_name"], from: "advanced_search_official_level"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-
-        scenario "Municipal Organization", :js do
-          ana = create :user, official_level: 2
-          john = create :user, official_level: 3
-
-          proposal1 = create(:proposal, author: ana)
-          proposal2 = create(:proposal, author: ana)
-          proposal3 = create(:proposal, author: john)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select Setting["official_level_2_name"], from: "advanced_search_official_level"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-
-        scenario "General director", :js do
-          ana = create :user, official_level: 3
-          john = create :user, official_level: 4
-
-          proposal1 = create(:proposal, author: ana)
-          proposal2 = create(:proposal, author: ana)
-          proposal3 = create(:proposal, author: john)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select Setting["official_level_3_name"], from: "advanced_search_official_level"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-
-        scenario "City councillor", :js do
-          ana = create :user, official_level: 4
-          john = create :user, official_level: 5
-
-          proposal1 = create(:proposal, author: ana)
-          proposal2 = create(:proposal, author: ana)
-          proposal3 = create(:proposal, author: john)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select Setting["official_level_4_name"], from: "advanced_search_official_level"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-
-        scenario "Mayoress", :js do
-          ana = create :user, official_level: 5
-          john = create :user, official_level: 4
-
-          proposal1 = create(:proposal, author: ana)
-          proposal2 = create(:proposal, author: ana)
-          proposal3 = create(:proposal, author: john)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select Setting["official_level_5_name"], from: "advanced_search_official_level"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-      end
-
-      context "Search by date" do
-        context "Predefined date ranges" do
-          scenario "Last day", :js do
-            proposal1 = create(:proposal, created_at: 1.minute.ago)
-            proposal2 = create(:proposal, created_at: 1.hour.ago)
-            proposal3 = create(:proposal, created_at: 2.days.ago)
-
-            visit proposals_path
-
-            click_link "Advanced search"
-            select "Last 24 hours", from: "js-advanced-search-date-min"
-            click_button "Filter"
-
-            expect(page).to have_content("There are 2 citizen proposals")
-
-            within("#proposals") do
-              expect(page).to have_content(proposal1.title)
-              expect(page).to have_content(proposal2.title)
-              expect(page).not_to have_content(proposal3.title)
-            end
-          end
-
-          scenario "Last week", :js do
-            proposal1 = create(:proposal, created_at: 1.day.ago)
-            proposal2 = create(:proposal, created_at: 5.days.ago)
-            proposal3 = create(:proposal, created_at: 8.days.ago)
-
-            visit proposals_path
-
-            click_link "Advanced search"
-            select "Last week", from: "js-advanced-search-date-min"
-            click_button "Filter"
-
-            expect(page).to have_content("There are 2 citizen proposals")
-
-            within("#proposals") do
-              expect(page).to have_content(proposal1.title)
-              expect(page).to have_content(proposal2.title)
-              expect(page).not_to have_content(proposal3.title)
-            end
-          end
-
-          scenario "Last month", :js do
-            proposal1 = create(:proposal, created_at: 10.days.ago)
-            proposal2 = create(:proposal, created_at: 20.days.ago)
-            proposal3 = create(:proposal, created_at: 33.days.ago)
-
-            visit proposals_path
-
-            click_link "Advanced search"
-            select "Last month", from: "js-advanced-search-date-min"
-            click_button "Filter"
-
-            expect(page).to have_content("There are 2 citizen proposals")
-
-            within("#proposals") do
-              expect(page).to have_content(proposal1.title)
-              expect(page).to have_content(proposal2.title)
-              expect(page).not_to have_content(proposal3.title)
-            end
-          end
-
-          scenario "Last year", :js do
-            proposal1 = create(:proposal, created_at: 300.days.ago)
-            proposal2 = create(:proposal, created_at: 350.days.ago)
-            proposal3 = create(:proposal, created_at: 370.days.ago)
-
-            visit proposals_path
-
-            click_link "Advanced search"
-            select "Last year", from: "js-advanced-search-date-min"
-            click_button "Filter"
-
-            expect(page).to have_content("There are 2 citizen proposals")
-
-            within("#proposals") do
-              expect(page).to have_content(proposal1.title)
-              expect(page).to have_content(proposal2.title)
-              expect(page).not_to have_content(proposal3.title)
-            end
-          end
-        end
-
-        scenario "Search by custom date range", :js do
-          proposal1 = create(:proposal, created_at: 2.days.ago)
-          proposal2 = create(:proposal, created_at: 3.days.ago)
-          proposal3 = create(:proposal, created_at: 9.days.ago)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select "Customized", from: "js-advanced-search-date-min"
-          fill_in "advanced_search_date_min", with: 7.days.ago
-          fill_in "advanced_search_date_max", with: 1.day.ago
-          click_button "Filter"
-
-          expect(page).to have_content("There are 2 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).not_to have_content(proposal3.title)
-          end
-        end
-
-        scenario "Search by custom invalid date range", :js do
-          proposal1 = create(:proposal, created_at: 2.days.ago)
-          proposal2 = create(:proposal, created_at: 3.days.ago)
-          proposal3 = create(:proposal, created_at: 9.days.ago)
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          select "Customized", from: "js-advanced-search-date-min"
-          fill_in "advanced_search_date_min", with: 4000.years.ago
-          fill_in "advanced_search_date_max", with: "wrong date"
-          click_button "Filter"
-
-          expect(page).to have_content("There are 3 citizen proposals")
-
-          within("#proposals") do
-            expect(page).to have_content(proposal1.title)
-            expect(page).to have_content(proposal2.title)
-            expect(page).to have_content(proposal3.title)
-          end
-        end
-
-        scenario "Search by multiple filters", :js do
-          ana  = create :user, official_level: 1
-          john = create :user, official_level: 1
-
-          create(:proposal, title: "Get Schwifty",   author: ana,  created_at: 1.minute.ago)
-          create(:proposal, title: "Hello Schwifty", author: john, created_at: 2.days.ago)
-          create(:proposal, title: "Save the forest")
-
-          visit proposals_path
-
-          click_link "Advanced search"
-          fill_in "Write the text", with: "Schwifty"
-          select Setting["official_level_1_name"], from: "advanced_search_official_level"
-          select "Last 24 hours", from: "js-advanced-search-date-min"
-
-          click_button "Filter"
-
-          expect(page).to have_content("There is 1 citizen proposal")
-
-          within("#proposals") do
-            expect(page).to have_content "Get Schwifty"
-          end
-        end
-
-        scenario "Maintain advanced search criteria", :js do
-          visit proposals_path
-          click_link "Advanced search"
-
-          fill_in "Write the text", with: "Schwifty"
-          select Setting["official_level_1_name"], from: "advanced_search_official_level"
-          select "Last 24 hours", from: "js-advanced-search-date-min"
-
-          click_button "Filter"
-
-          expect(page).to have_content("citizen proposals cannot be found")
-
-          within "#js-advanced-search" do
-            expect(page).to have_selector("input[name='search'][value='Schwifty']")
-            expect(page).to have_select("advanced_search[official_level]", selected: Setting["official_level_1_name"])
-            expect(page).to have_select("advanced_search[date_min]", selected: "Last 24 hours")
-          end
-        end
-
-        scenario "Maintain custom date search criteria", :js do
-          visit proposals_path
-          click_link "Advanced search"
-
-          select "Customized", from: "js-advanced-search-date-min"
-          fill_in "advanced_search_date_min", with: 7.days.ago.strftime("%d/%m/%Y")
-          fill_in "advanced_search_date_max", with: 1.day.ago.strftime("%d/%m/%Y")
-          click_button "Filter"
-
-          expect(page).to have_content("citizen proposals cannot be found")
-
-          within "#js-advanced-search" do
-            expect(page).to have_select("advanced_search[date_min]", selected: "Customized")
-            expect(page).to have_selector("input[name='advanced_search[date_min]'][value*='#{7.days.ago.strftime("%d/%m/%Y")}']")
-            expect(page).to have_selector("input[name='advanced_search[date_max]'][value*='#{1.day.ago.strftime("%d/%m/%Y")}']")
-          end
-        end
-      end
-    end
-
-    scenario "Order by relevance by default", :spanish_search, :js do
-      create(:proposal, title: "Show you got",      cached_votes_up: 10)
-      create(:proposal, title: "Show what you got", cached_votes_up: 1)
-      create(:proposal, title: "Show you got",      cached_votes_up: 100)
+    scenario "Order by relevance by default" do
+      create(:proposal, title: "In summary", summary: "Title content too", cached_votes_up: 10)
+      create(:proposal, title: "Title content", summary: "Summary", cached_votes_up: 1)
+      create(:proposal, title: "Title here", summary: "Content here", cached_votes_up: 100)
 
       visit proposals_path
-      fill_in "search", with: "Show what you got"
+      fill_in "search", with: "Title content"
       click_button "Search"
 
       expect(page).to have_selector("a.is-active", text: "relevance")
 
       within("#proposals") do
-        expect(all(".proposal")[0].text).to match "Show what you got"
-        expect(all(".proposal")[1].text).to match "Show you got"
-        expect(all(".proposal")[2].text).to match "Show you got"
+        expect(all(".proposal")[0].text).to match "Title content"
+        expect(all(".proposal")[1].text).to match "Title here"
+        expect(all(".proposal")[2].text).to match "In summary"
       end
     end
 
-    scenario "Reorder results maintaing search", :js do
+    scenario "Reorder results maintaing search" do
       create(:proposal, title: "Show you got",      cached_votes_up: 10,  created_at: 1.week.ago)
       create(:proposal, title: "Show what you got", cached_votes_up: 1,   created_at: 1.month.ago)
       create(:proposal, title: "Show you got",      cached_votes_up: 100, created_at: Time.current)
@@ -1503,69 +1277,6 @@ describe "Proposals" do
     expect(page).not_to have_content "This proposal has been flagged as inappropriate by several users."
   end
 
-  scenario "Flagging", :js do
-    user = create(:user)
-    proposal = create(:proposal)
-
-    login_as(user)
-    visit proposal_path(proposal)
-
-    within "#proposal_#{proposal.id}" do
-      page.find("#flag-expand-proposal-#{proposal.id}").click
-      page.find("#flag-proposal-#{proposal.id}").click
-
-      expect(page).to have_css("#unflag-expand-proposal-#{proposal.id}")
-    end
-
-    expect(Flag.flagged?(user, proposal)).to be
-  end
-
-  scenario "Unflagging", :js do
-    user = create(:user)
-    proposal = create(:proposal)
-    Flag.flag(user, proposal)
-
-    login_as(user)
-    visit proposal_path(proposal)
-
-    within "#proposal_#{proposal.id}" do
-      page.find("#unflag-expand-proposal-#{proposal.id}").click
-      page.find("#unflag-proposal-#{proposal.id}").click
-
-      expect(page).to have_css("#flag-expand-proposal-#{proposal.id}")
-    end
-
-    expect(Flag.flagged?(user, proposal)).not_to be
-  end
-
-  scenario "Flagging/Unflagging AJAX", :js do
-    user = create(:user)
-    proposal = create(:proposal)
-
-    login_as(user)
-    visit proposal_path(proposal)
-
-    # Flagging
-    within "#proposal_#{proposal.id}" do
-      page.find("#flag-expand-proposal-#{proposal.id}").click
-      page.find("#flag-proposal-#{proposal.id}").click
-
-      expect(page).to have_css("#unflag-expand-proposal-#{proposal.id}")
-    end
-
-    expect(Flag.flagged?(user, proposal)).to be
-
-    # Unflagging
-    within "#proposal_#{proposal.id}" do
-      page.find("#unflag-expand-proposal-#{proposal.id}").click
-      page.find("#unflag-proposal-#{proposal.id}").click
-
-      expect(page).to have_css("#flag-expand-proposal-#{proposal.id}")
-    end
-
-    expect(Flag.flagged?(user, proposal)).not_to be
-  end
-
   it_behaves_like "followable", "proposal", "proposal_path", { "id": "id" }
 
   it_behaves_like "imageable", "proposal", "proposal_path", { "id": "id" }
@@ -1615,7 +1326,6 @@ describe "Proposals" do
                   {}
 
   scenario "Erased author" do
-    Setting["feature.featured_proposals"] = true
     user = create(:user)
     proposal = create(:proposal, author: user)
     user.erase
@@ -1625,10 +1335,17 @@ describe "Proposals" do
 
     visit proposal_path(proposal)
     expect(page).to have_content("User deleted")
+  end
+
+  scenario "Erased author with featured proposals" do
+    Setting["feature.featured_proposals"] = true
+    user = create(:proposal).author
+    user.erase
 
     create_featured_proposals
 
     visit proposals_path
+
     expect(page).to have_content("User deleted")
   end
 
@@ -1643,7 +1360,7 @@ describe "Proposals" do
         create(:proposal, geozone: new_york, title: "Sully monument")
       end
 
-      scenario "From map" do
+      scenario "From map", :no_js do
         visit proposals_path
 
         click_link "map"
@@ -1696,7 +1413,7 @@ describe "Proposals" do
   end
 
   context "Suggesting proposals" do
-    scenario "Show up to 5 suggestions", :js do
+    scenario "Show up to 5 suggestions" do
       create(:proposal, title: "First proposal, has search term")
       create(:proposal, title: "Second title")
       create(:proposal, title: "Third proposal, has search term")
@@ -1708,24 +1425,49 @@ describe "Proposals" do
       login_as(create(:user))
       visit new_proposal_path
       fill_in "Proposal title", with: "search"
-      check "proposal_terms_of_service"
+      check "I agree to the Privacy Policy and the Terms and conditions of use"
 
       within("div.js-suggest") do
         expect(page).to have_content "You are seeing 5 of 6 proposals containing the term 'search'"
       end
     end
 
-    scenario "No found suggestions", :js do
+    scenario "No found suggestions" do
       create(:proposal, title: "First proposal").update_column(:confidence_score, 10)
       create(:proposal, title: "Second proposal").update_column(:confidence_score, 8)
 
       login_as(create(:user))
       visit new_proposal_path
       fill_in "Proposal title", with: "debate"
-      check "proposal_terms_of_service"
+      check "I agree to the Privacy Policy and the Terms and conditions of use"
 
       within("div.js-suggest") do
         expect(page).not_to have_content "You are seeing"
+      end
+    end
+
+    describe "Don't show suggestions" do
+      let(:user) { create(:user) }
+      let(:proposal) { create(:proposal, title: "Proposal title, has search term", author: user) }
+
+      before do
+        login_as(user)
+        visit edit_proposal_path(proposal)
+      end
+
+      scenario "for edit action" do
+        fill_in "Proposal title", with: "search"
+
+        expect(page).not_to have_content "There is a proposal with the term 'search'"
+      end
+
+      scenario "for update action" do
+        fill_in "Proposal title", with: ""
+
+        click_button "Save changes"
+        fill_in "Proposal title", with: "search"
+
+        expect(page).not_to have_content "There is a proposal with the term 'search'"
       end
     end
   end
@@ -1844,11 +1586,8 @@ describe "Successful proposals" do
     end
   end
 
-  scenario "Successful proposals do not show create question button in index" do
+  scenario "Successful proposals do not show create question button in index", :admin do
     successful_proposals = create_successful_proposals
-    admin = create(:administrator)
-
-    login_as(admin.user)
 
     visit proposals_path
 
@@ -1859,11 +1598,8 @@ describe "Successful proposals" do
     end
   end
 
-  scenario "Successful proposals do not show create question button in show" do
+  scenario "Successful proposals do not show create question button in show", :admin do
     successful_proposals = create_successful_proposals
-    admin = create(:administrator)
-
-    login_as(admin.user)
 
     successful_proposals.each do |proposal|
       visit proposal_path(proposal)
@@ -1892,14 +1628,52 @@ describe "Successful proposals" do
 
       fill_in "Proposal title", with: "Help refugees"
       fill_in "Proposal summary", with: "In summary what we want is..."
-      fill_in "Proposal text", with: "This is very important because..."
-      fill_in "proposal_video_url", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
-      fill_in "proposal_tag_list", with: "Refugees, Solidarity"
-      check "proposal_terms_of_service"
+      fill_in_ckeditor "Proposal text", with: "This is very important because..."
+      fill_in "External video URL", with: "https://www.youtube.com/watch?v=yPQfcG-eimk"
+      fill_in "Tags", with: "Refugees, Solidarity"
+      check "I agree to the Privacy Policy and the Terms and conditions of use"
 
       click_button "Create proposal"
 
       expect(page).to have_content "Proposal created successfully."
+    end
+  end
+
+  describe "SDG related list" do
+    let(:user) { create(:user) }
+
+    before do
+      Setting["feature.sdg"] = true
+      Setting["sdg.process.proposals"] = true
+    end
+
+    scenario "create proposal with sdg related list" do
+      login_as(user)
+      visit new_proposal_path
+      fill_in "Proposal title", with: "A title for a proposal related with SDG related content"
+      fill_in "Proposal summary", with: "In summary, what we want is..."
+      fill_in "Full name of the person submitting the proposal", with: "Isabel Garcia"
+      click_sdg_goal(1)
+      check "I agree to the Privacy Policy and the Terms and conditions of use"
+
+      click_button "Create proposal"
+
+      within(".sdg-goal-tag-list") { expect(page).to have_link "1. No Poverty" }
+    end
+
+    scenario "edit proposal with sdg related list" do
+      proposal = create(:proposal, author: user)
+      proposal.sdg_goals = [SDG::Goal[1], SDG::Goal[2]]
+      login_as(user)
+      visit edit_proposal_path(proposal)
+
+      remove_sdg_goal_or_target_tag(1)
+      click_button "Save changes"
+
+      within(".sdg-goal-tag-list") do
+        expect(page).not_to have_link "1. No Poverty"
+        expect(page).to have_link "2. Zero Hunger"
+      end
     end
   end
 end
