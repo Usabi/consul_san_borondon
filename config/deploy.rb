@@ -17,7 +17,7 @@ set :server_name, deploysecret(:server_name)
 set :db_server, deploysecret(:db_server)
 set :ssh_options, port: deploysecret(:ssh_port)
 
-set :repo_url, "https://github.com/consul/consul.git"
+set :repo_url, "git@github.com:Usabi/consul_san_borondon.git"
 
 set :revision, `git rev-parse --short #{fetch(:branch)}`.strip
 
@@ -32,7 +32,7 @@ set :keep_releases, 5
 
 set :local_user, ENV["USER"]
 
-set :puma_conf, "#{release_path}/config/puma/#{fetch(:rails_env)}.rb"
+# set :puma_conf, "#{release_path}/config/puma/#{fetch(:rails_env)}.rb"
 
 set :delayed_job_workers, 2
 set :delayed_job_roles, :background
@@ -46,18 +46,19 @@ set(:config_files, %w[
 set :whenever_roles, -> { :app }
 
 namespace :deploy do
-  after :updating, "rvm1:install:rvm"
-  after :updating, "rvm1:install:ruby"
-  after :updating, "install_bundler_gem"
+ # after :updating, "rvm1:install:rvm"
+ # after :updating, "rvm1:install:ruby"
+ # after :updating, "install_bundler_gem"
   before "deploy:migrate", "remove_local_census_records_duplicates"
 
   after "deploy:migrate", "add_new_settings"
+  after :publishing, "restart_tmp"
 
   before :publishing, "smtp_ssl_and_delay_jobs_secrets"
-  after  :publishing, "setup_puma"
+  # after  :publishing, "setup_puma"
 
-  after :published, "deploy:restart"
-  before "deploy:restart", "puma:smart_restart"
+  # after :published, "deploy:restart"
+  # before "deploy:restart", "puma:smart_restart"
   before "deploy:restart", "delayed_job:restart"
 
   after :finished, "refresh_sitemap"
@@ -161,5 +162,12 @@ task :smtp_ssl_and_delay_jobs_secrets do
         end
       end
     end
+  end
+end
+
+desc "Restart application"
+task :restart_tmp do
+  on roles(:app) do
+  execute "touch #{ File.join(current_path, "tmp", "restart.txt") }"
   end
 end
