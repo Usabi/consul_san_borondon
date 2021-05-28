@@ -29,20 +29,23 @@ section "Creating Budgets" do
     name_en: "#{I18n.t("seeds.budgets.budget", locale: :en)} #{Date.current.year - 1}",
     name_es: "#{I18n.t("seeds.budgets.budget", locale: :es)} #{Date.current.year - 1}",
     currency_symbol: I18n.t("seeds.budgets.currency"),
-    phase: "finished"
+    phase: "finished",
+    published: true
   )
 
   Budget.create!(
     name_en: "#{I18n.t("seeds.budgets.budget", locale: :en)} #{Date.current.year}",
     name_es: "#{I18n.t("seeds.budgets.budget", locale: :es)} #{Date.current.year}",
     currency_symbol: I18n.t("seeds.budgets.currency"),
-    phase: "accepting"
+    phase: "accepting",
+    published: true
   )
 
   Budget.find_each do |budget|
     budget.phases.each do |phase|
       random_locales.map do |locale|
         Globalize.with_locale(locale) do
+          phase.name = "Name for locale #{locale}"
           phase.description = "Description for locale #{locale}"
           phase.summary = "Summary for locale #{locale}"
           phase.save!
@@ -147,7 +150,7 @@ end
 
 section "Marking investments as visible to valuators" do
   (1..50).to_a.sample.times do
-    Budget::Investment.reorder("RANDOM()").first.update(visible_to_valuators: true)
+    Budget::Investment.sample.update(visible_to_valuators: true)
   end
 end
 

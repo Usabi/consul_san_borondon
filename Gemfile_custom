@@ -3,5 +3,3 @@
 # * English: https://github.com/consul/consul/blob/master/CUSTOMIZE_EN.md#gemfile
 # * Spanish: https://github.com/consul/consul/blob/master/CUSTOMIZE_ES.md#gemfile
 #
-gem "database_cleaner", "~> 1.7.0"
-gem "faker", "~> 1.8.7"
