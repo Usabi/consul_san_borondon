@@ -40,12 +40,12 @@ namespace :deploy do
  # after :updating, "rvm1:install:rvm"
  # after :updating, "rvm1:install:ruby"
  # after :updating, "install_bundler_gem"
-  before "deploy:migrate", "remove_local_census_records_duplicates"
+  # before "deploy:migrate", "remove_local_census_records_duplicates"
 
   after "deploy:migrate", "add_new_settings"
   after :publishing, "restart_tmp"
 
-  before :publishing, "smtp_ssl_and_delay_jobs_secrets"
+  # before :publishing, "smtp_ssl_and_delay_jobs_secrets"
   # after  :publishing, "setup_puma"
 
   # after :published, "deploy:restart"
@@ -77,6 +77,24 @@ task :install_ruby do
         else
           info "Ruby: Using #{current_ruby}"
         end
+      end
+    end
+  end
+end
+
+task :install_bundler_gem do
+  on roles(:app) do
+    within release_path do
+      execute :rvm, fetch(:rvm1_ruby_version), "do", "gem install bundler --version 1.17.1"
+    end
+  end
+end
+
+task :remove_local_census_records_duplicates do
+  on roles(:db) do
+    within release_path do
+      with rails_env: fetch(:rails_env) do
+        execute :rake, "local_census_records:remove_duplicates"
       end
     end
   end
