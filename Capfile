@@ -10,10 +10,10 @@ require "capistrano/rails/migrations"
 #require "capistrano/passenger"
 require "capistrano/delayed_job"
 require "whenever/capistrano"
-require "rvm1/capistrano3"
+# require "rvm1/capistrano3"
 
-require "capistrano/puma"
-install_plugin Capistrano::Puma, load_hooks: false
+# require "capistrano/puma"
+# install_plugin Capistrano::Puma, load_hooks: false
 
 #SCM: Git
 require "capistrano/scm/git"
